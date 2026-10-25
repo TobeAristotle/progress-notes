@@ -1,0 +1,27 @@
+# Generated binaries and test output
+/bin/
+/artifacts/
+/test-results/
+/obj/
+.vs/
+*.exe
+*.pdb
+*.lnk
+*.log
+*.tmp
+startup-error.txt
+startup-warning.txt
+# Personal runtime data and archives
+**/data/
+**/test-data/
+**/backups/
+**/workspace*.json
+**/state*.json
+**/migration-complete.txt
+**/application-version.txt
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
