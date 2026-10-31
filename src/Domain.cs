@@ -8,6 +8,7 @@ using System.Runtime.Serialization;
 public class NoteRecord {
     [DataMember] public string Id;
     [DataMember] public string Text;
+    [DataMember] public List<NoteFormat> Formats=new List<NoteFormat>();
     public NoteRecord(string text) {Id=Guid.NewGuid().ToString("N");Text=text;}
 }
 [DataContract]
@@ -15,7 +16,7 @@ public class NoteCategory {
     [DataMember] public string Id;
     [DataMember] public string Name;
     [DataMember] public NoteRecord Note;
-    public string Content {get{return Note.Text;}set{Note.Text=value;}}
+    public string Content {get{return Note.Text;}set{Note.Text=value;Note.Formats=new List<NoteFormat>();}}
     public NoteCategory(string name,string text) {Id=Guid.NewGuid().ToString("N");Name=name;Note=new NoteRecord(text);}
 }
 [DataContract]
@@ -26,7 +27,7 @@ public class CountdownRecord {
 }
 [DataContract]
 public class ContentDocument {
-    [DataMember] public int SchemaVersion=1;
+    [DataMember] public int SchemaVersion=2;
     [DataMember] public string Id=Guid.NewGuid().ToString("N");
     [DataMember] public CountdownRecord Countdown=new CountdownRecord();
     [DataMember] public List<NoteCategory> Categories=new List<NoteCategory>();
@@ -37,7 +38,7 @@ public class ContentDocument {
 }
 [DataContract]
 public class DeviceSettings {
-    [DataMember] public int SchemaVersion=1;
+    [DataMember] public int SchemaVersion=2;
     [DataMember] public int X=-9999;
     [DataMember] public int Y=-9999;
     [DataMember] public int ExpandedWidth=464;
@@ -80,7 +81,7 @@ public static class StateValidation {
     public static void Validate(NoteState state) {
         if(state==null||state.Content==null||state.Device==null)throw new InvalidDataException("内容或设备设置缺失。");
         ContentDocument d=state.Content;DeviceSettings local=state.Device;
-        Version("内容",d.SchemaVersion);Version("设备设置",local.SchemaVersion);
+        if(d.SchemaVersion>2)throw new UnsupportedDataVersionException("内容",d.SchemaVersion);if(d.SchemaVersion<1)throw new InvalidDataException("内容版本无效。");d.SchemaVersion=2;if(local.SchemaVersion>2)throw new UnsupportedDataVersionException("设备设置",local.SchemaVersion);if(local.SchemaVersion<1)throw new InvalidDataException("设备设置版本无效。");
         if(d.Countdown==null||d.Categories==null||d.Categories.Count==0)throw new InvalidDataException("便签或倒计时数据缺失。");
         HashSet<string> ids=new HashSet<string>(StringComparer.Ordinal);HashSet<string> names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         RequireId(d.Id,ids);RequireId(d.Countdown.Id,ids);
@@ -89,11 +90,12 @@ public static class StateValidation {
         if(d.Countdown.TargetDate.Length>0&&!DateTime.TryParseExact(d.Countdown.TargetDate,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out date))throw new InvalidDataException("倒计时日期无效。");
         foreach(NoteCategory c in d.Categories) {
             if(c==null||String.IsNullOrWhiteSpace(c.Name)||!names.Add(c.Name)||c.Note==null||c.Note.Text==null)throw new InvalidDataException("分类或正文数据无效。");
-            RequireId(c.Id,ids);RequireId(c.Note.Id,ids);
+            RequireId(c.Id,ids);RequireId(c.Note.Id,ids);NoteFormatting.Validate(c.Note);
         }
         // The current prototype has fixed expanded dimensions; these fields reserve device-only layout state.
         if(local.ThemeName=="sage-paper"||local.ThemeName=="ice-blue")local.ThemeName="ios-paper";
-        if(local.ThemeName!="ios-paper"||local.BackgroundTransparencyPercent<0||local.BackgroundTransparencyPercent>99)throw new InvalidDataException("本机外观设置无效。");
+        if(!Themes.Contains(local.ThemeName)||local.BackgroundTransparencyPercent<0||local.BackgroundTransparencyPercent>99)throw new InvalidDataException("本机外观设置无效。");
+        local.SchemaVersion=2;
         if(local.ExpandedWidth==440&&local.ExpandedHeight==654){local.ExpandedWidth=464;local.ExpandedHeight=818;}
         if(local.ExpandedWidth==464&&local.ExpandedHeight==740)local.ExpandedHeight=818;
         if(local.ExpandedWidth!=464||local.ExpandedHeight!=818)throw new InvalidDataException("此版本不支持该面板尺寸。");

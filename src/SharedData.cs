@@ -6,7 +6,7 @@ using System.Runtime.Serialization.Json;
 using System.Collections.Generic;
 
 public static class SharedData {
-    public const string ProgramVersion="1.16";
+    public const string ProgramVersion="1.23";
     public static string Folder {get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopNote","data");}}
     public static FileStream OpenWriterLock(string folder){Directory.CreateDirectory(folder);try{return new FileStream(Path.Combine(folder,"workspace.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);}catch(IOException e){throw new IOException("数据目录正在被另一个便签进程使用，请先退出旧版。",e);}}
     public static string Hash(string file){using(SHA256 sha=SHA256.Create())using(FileStream stream=new FileStream(file,FileMode.Open,FileAccess.Read,FileShare.Read))return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-","");}
@@ -15,6 +15,7 @@ public static class SharedData {
     static void CopyVerified(string source,string destination){Directory.CreateDirectory(Path.GetDirectoryName(destination));File.Copy(source,destination,false);if(Hash(source)!=Hash(destination))throw new IOException("备份校验失败，未迁移数据："+source);}
     static void AtomicText(string file,string text){Directory.CreateDirectory(Path.GetDirectoryName(file));string temp=file+"-"+Guid.NewGuid().ToString("N")+".tmp";using(FileStream stream=new FileStream(temp,FileMode.CreateNew,FileAccess.Write,FileShare.None)){byte[] bytes=Encoding.UTF8.GetBytes(text);stream.Write(bytes,0,bytes.Length);stream.Flush(true);}if(File.Exists(file))File.Replace(temp,file,null,true);else File.Move(temp,file);}
     public static int Schema(string file){using(StreamReader reader=new StreamReader(file,Encoding.UTF8,true))using(MemoryStream stream=new MemoryStream(Encoding.UTF8.GetBytes(reader.ReadToEnd()))){WorkspaceEnvelope envelope=(WorkspaceEnvelope)new DataContractJsonSerializer(typeof(WorkspaceEnvelope)).ReadObject(stream);if(envelope==null)throw new InvalidDataException("工作区为空。");return envelope.SchemaVersion;}}
+    static int ContentSchema(string file){using(FileStream stream=File.OpenRead(file)){WorkspaceEnvelope envelope=(WorkspaceEnvelope)new DataContractJsonSerializer(typeof(WorkspaceEnvelope)).ReadObject(stream);return envelope.Content.SchemaVersion;}}
     public static void DailyBackup(string folder,string primary){string file=Path.Combine(folder,"backups","daily",DateTime.Now.ToString("yyyy-MM-dd")+"-workspace.json");if(!File.Exists(file))CopyVerified(primary,file);}
     static string UpgradeBackup(LocalJsonRepository repository,string previous){string backup=Path.Combine(repository.Folder,"backups",Unique("upgrade"));Directory.CreateDirectory(backup);foreach(string name in new string[]{"workspace.json","workspace.backup.json","application-version.txt","migration-complete.txt"}){string source=Path.Combine(repository.Folder,name);if(File.Exists(source))CopyVerified(source,Path.Combine(backup,name));}File.WriteAllText(Path.Combine(backup,"说明.txt"),"升级前副本。程序版本 "+previous+" → "+ProgramVersion+"。如需恢复，请先退出程序并保留当前数据目录。",Encoding.UTF8);return backup;}
     static string ArchiveLegacy(string programRoot,string destination,string selected){string archive=Path.Combine(destination,"backups",Unique("legacy-import"));Directory.CreateDirectory(archive);StringBuilder manifest=new StringBuilder("source\tarchive\tsha256\r\n");        foreach(string name in new string[]{"workspace.json","workspace.backup.json","state.json","state.backup.json"}){string source=Path.Combine(selected,name);if(File.Exists(source)){string relative=Path.Combine("selected-source",name);string target=Path.Combine(archive,relative);CopyVerified(source,target);manifest.Append(source).Append('\t').Append(relative).Append('\t').Append(Hash(target)).Append("\r\n");}}
@@ -31,7 +32,7 @@ public static class SharedData {
         }
         // Loading first rejects future formats without silently recovering an older backup.
         state=repository.Load();string previous=File.Exists(marker)?File.ReadAllText(marker,Encoding.UTF8).Trim():"legacy";
-        bool needsFormat=!File.Exists(repository.PathName)||Schema(repository.PathName)<2;
+        bool needsFormat=!File.Exists(repository.PathName)||Schema(repository.PathName)<2||ContentSchema(repository.PathName)<2;
         if(previous!=ProgramVersion||needsFormat){UpgradeBackup(repository,previous);if(needsFormat)repository.Save(state);AtomicText(marker,ProgramVersion);}
     }
 }

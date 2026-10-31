@@ -4,20 +4,6 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-public static class BlueTheme {
-    public static readonly Color Outer=Color.FromArgb(207,224,241);
-    public static readonly Color Paper=Color.FromArgb(243,247,252);
-    public static readonly Color Surface=Color.FromArgb(254,254,254);
-    public static readonly Color Soft=Color.FromArgb(221,235,251);
-    public static readonly Color Ink=Color.FromArgb(44,76,109);
-    public static readonly Color Muted=Color.FromArgb(141,159,177);
-    public static readonly Color Accent=Color.FromArgb(69,119,173);
-    public static readonly Color Border=Color.FromArgb(216,227,239);
-    public static bool IsBackground(byte r,byte g,byte b) {
-        return (r>=180&&g>=190&&b>=200)||Same(Paper,r,g,b)||Same(Surface,r,g,b)||Same(Soft,r,g,b)||Same(Outer,r,g,b)||(r>=196&&r<=218&&g>=215&&g<=233&&b>=232&&b<=246&&b>r+15);
-    }
-    static bool Same(Color c,byte r,byte g,byte b){return c.R==r&&c.G==g&&c.B==b;}
-}
 public static class PaperBitmap {
     // Background alpha is separate from text alpha. Never lower the entire form's Opacity.
     public static Bitmap Convert(Bitmap source,int transparencyPercent) {
@@ -40,18 +26,18 @@ public static class PaperBitmap {
                 bool nearInk=false;
                 for(int dy=-1;dy<=1&&!nearInk;dy++)for(int dx=-1;dx<=1;dx++) {
                     int j=(y+dy)*data.Stride+(x+dx)*4;
-                    if(original[j+3]==255&&original[j+2]<160&&original[j+1]<175&&original[j]<160){nearInk=true;break;}
+                    if(original[j+3]==255&&(BlueTheme.IsDark?(original[j+2]>190&&original[j+1]>190&&original[j]>190):(original[j+2]<160&&original[j+1]<175&&original[j]<160))){nearInk=true;break;}
                 }
-                if(nearInk){bytes[i]=246;bytes[i+1]=251;bytes[i+2]=244;bytes[i+3]=210;}
+                if(nearInk){bytes[i]=BlueTheme.IsDark?(byte)48:(byte)246;bytes[i+1]=BlueTheme.IsDark?(byte)33:(byte)251;bytes[i+2]=BlueTheme.IsDark?(byte)25:(byte)244;bytes[i+3]=210;}
             }
             for(int y=0;y<data.Height;y++)for(int x=0;x<data.Width;x++){
                 int i=y*data.Stride+x*4;
                 if(!PaperShapes.Inside(x+.5f,y+.5f,0,0,data.Width,data.Height,Math.Min(28,data.Height/2f)))bytes[i+3]=0;
                 else {
-                    if(x<2||y<2||x>=data.Width-2||y>=data.Height-2){float t=(float)y/Math.Max(1,data.Height-1);bytes[i]=(byte)(245-12*t);bytes[i+1]=(byte)(232-17*t);bytes[i+2]=(byte)(217-21*t);bytes[i+3]=alpha;}
+                    if(x<2||y<2||x>=data.Width-2||y>=data.Height-2){float t=(float)y/Math.Max(1,data.Height-1);Color outer=BlueTheme.OuterAt(t);bytes[i]=outer.B;bytes[i+1]=outer.G;bytes[i+2]=outer.R;bytes[i+3]=alpha;}
                     float top=data.Height<100?12:19,bottom=data.Height<100?50:799;
                     if(x>=76&&x<444&&y>=top&&y<bottom&&!PaperShapes.Inside(x+.5f,y+.5f,76,top,444,bottom,Math.Min(24,(bottom-top)/2))){
-                        float t=(float)y/Math.Max(1,data.Height-1);bytes[i]=(byte)(245+(233-245)*t);bytes[i+1]=(byte)(232+(215-232)*t);bytes[i+2]=(byte)(217+(196-217)*t);bytes[i+3]=alpha;
+                        float t=(float)y/Math.Max(1,data.Height-1);Color outer=BlueTheme.OuterAt(t);bytes[i]=outer.B;bytes[i+1]=outer.G;bytes[i+2]=outer.R;bytes[i+3]=alpha;
                     }
                 }
             }

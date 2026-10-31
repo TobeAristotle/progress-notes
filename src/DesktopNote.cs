@@ -53,8 +53,8 @@ public class CalendarView : Control {
         using(Font normal=new Font("Microsoft YaHei UI",15,FontStyle.Regular,GraphicsUnit.Pixel))
         using(Font small=new Font("Microsoft YaHei UI",13,FontStyle.Regular,GraphicsUnit.Pixel))
         using(SolidBrush ink=new SolidBrush(BlueTheme.Ink))
-        using(SolidBrush muted=new SolidBrush(Color.FromArgb(135,139,145)))
-        using(SolidBrush red=new SolidBrush(Color.FromArgb(226,73,70))) {
+        using(SolidBrush muted=new SolidBrush(BlueTheme.Muted))
+        using(SolidBrush red=new SolidBrush(BlueTheme.Today)) {
             Typography.DrawString(g,Month.Month+"月",title,red,10,3);Typography.DrawString(g,"│",small,muted,48,6);
             DateTime lunar=Month.Year==DateTime.Today.Year&&Month.Month==DateTime.Today.Month?DateTime.Today:Month;
             Typography.DrawString(g,LunarText(lunar),small,muted,65,5);
@@ -67,7 +67,7 @@ public class CalendarView : Control {
                 int n=offset+day-1,col=n%7,row=n/7;float x=12+col*cw,y=54+row*18;DateTime date=Month.AddDays(day-1);bool today=date==DateTime.Today;
                 if(today)g.FillEllipse(red,x+(cw-20)/2,y,20,20);
                 Typography.DrawString(g,day.ToString(),normal,today?Brushes.White:col>=5?muted:ink,new RectangleF(x,y,cw,18),centered);
-                if(!today&&SelectedDate.HasValue&&SelectedDate.Value==date)using(Pen p=new Pen(Color.FromArgb(226,73,70),1.5f))g.DrawLine(p,x+cw/2-8,y+17,x+cw/2+8,y+17);
+                if(!today&&SelectedDate.HasValue&&SelectedDate.Value==date)using(Pen p=new Pen(BlueTheme.Today,1.5f))g.DrawLine(p,x+cw/2-8,y+17,x+cw/2+8,y+17);
             }
             centered.Dispose();
         }
@@ -77,18 +77,20 @@ public class CalendarView : Control {
         if(e.Y>=54&&e.X>=12&&e.X<Width-12){int col=(int)((e.X-12)/((Width-24)/7f)),row=(e.Y-54)/18,day=row*7+col-FirstColumn(Month)+1;if(day>=1&&day<=DateTime.DaysInMonth(Month.Year,Month.Month)){SelectedDate=Month.AddDays(day-1);Invalidate();}}
     }
 }
-public class NoteEditor : Form {
+public class NoteEditor : UtilityForm {
     readonly MixedRichTextBox box; readonly Label status; readonly System.Windows.Forms.Timer timer;
     readonly Func<string,bool> persist; bool dirty; bool closing;
-    public NoteEditor(string text, Rectangle rect, Func<string,bool> save) {
+    public Func<string,System.Collections.Generic.List<NoteFormat>,bool> PersistRich;
+    public NoteEditor(string text, Rectangle rect, Func<string,bool> save, System.Collections.Generic.List<NoteFormat> formats=null) {
         persist=save;Text="编辑便签 · Esc 完成";StartPosition=FormStartPosition.Manual;
         Icon=AppIcons.Main;FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;MinimumSize=new Size(280,180);
-        Font=Typography.Chinese(14,FontStyle.Regular);BackColor=BlueTheme.Paper;Padding=new Padding(14,56,14,38);KeyPreview=true;Location=rect.Location;ClientSize=new Size(rect.Width,rect.Height+56);
-        status=new MixedLabel { Anchor=AnchorStyles.Left|AnchorStyles.Right|AnchorStyles.Bottom,Location=new Point(20,ClientSize.Height-30),Size=new Size(ClientSize.Width-40,22),Font=Typography.Chinese(12,FontStyle.Regular),Text="",Visible=false,ForeColor=Color.FromArgb(190,66,66) };
-        box=new MixedRichTextBox { Dock=DockStyle.Fill,Multiline=true,ScrollBars=RichTextBoxScrollBars.Vertical,BorderStyle=BorderStyle.None,Font=new Font("Microsoft YaHei UI",17f,FontStyle.Regular,GraphicsUnit.Pixel),Text=text };
+        Font=Typography.Chinese(14,FontStyle.Regular);BackColor=BlueTheme.Paper;Padding=new Padding(14,56,14,14);KeyPreview=true;Location=rect.Location;ClientSize=new Size(rect.Width,rect.Height);
+        status=new MixedLabel { Anchor=AnchorStyles.Left|AnchorStyles.Right|AnchorStyles.Bottom,Location=new Point(20,ClientSize.Height-30),Size=new Size(ClientSize.Width-40,22),Font=Typography.Chinese(12,FontStyle.Regular),Text="",Visible=false,ForeColor=BlueTheme.Danger };
+        box=new MixedRichTextBox { CompactParagraphs=true,Dock=DockStyle.Fill,Multiline=true,ScrollBars=RichTextBoxScrollBars.Vertical,BorderStyle=BorderStyle.None,Font=new Font("Microsoft YaHei UI",17f,FontStyle.Regular,GraphicsUnit.Pixel),Text=text };
+        box.HideSelection=false;
         Panel writing=new EditorPaper{Dock=DockStyle.Fill,Padding=new Padding(16),BackColor=BlueTheme.Paper};
-        box.BackColor=BlueTheme.Surface;box.ForeColor=BlueTheme.Ink;writing.Controls.Add(box);Controls.Add(writing);Controls.Add(status);
-        Label title=new MixedLabel{Text="编辑便签",Location=new Point(20,18),Size=new Size(200,25),Font=Typography.Chinese(18,FontStyle.Regular),ForeColor=BlueTheme.Ink};
+        box.BackColor=BlueTheme.Surface;box.ForeColor=BlueTheme.Ink;writing.Controls.Add(box);Controls.Add(writing);Controls.Add(status);if(formats!=null)NoteFormatting.Import(box,formats);
+        Label title=new MixedLabel{Text="编辑便签",Location=new Point(20,18),Size=new Size(ClientSize.Width-110,25),Font=Typography.Chinese(18,FontStyle.Regular),ForeColor=BlueTheme.Ink};
         TextChanged+=delegate{string[] parts=Text.Split(new string[]{" · "},StringSplitOptions.None);title.Text=parts.Length>1?parts[1]:"编辑便签";};
         Button done=new EditorDoneButton{Text="完成",Anchor=AnchorStyles.Top|AnchorStyles.Right,Location=new Point(ClientSize.Width-74,12),Size=new Size(56,32),Font=Typography.Chinese(15,FontStyle.Regular),Cursor=Cursors.Hand,TabStop=false};
         done.Click+=delegate{Close();};Controls.Add(title);Controls.Add(done);title.BringToFront();done.BringToFront();
@@ -103,19 +105,46 @@ public class NoteEditor : Form {
         box.TextChanged+=delegate { dirty=true;timer.Stop();timer.Start(); };
         box.CompositionEnded+=delegate{if(dirty){timer.Stop();timer.Start();}};
         Shown+=delegate { box.Focus();box.SelectionStart=box.TextLength; };
-        KeyDown+=delegate(object sender,KeyEventArgs e) { if(e.KeyCode==Keys.Escape&&!box.IsImeComposing) { e.SuppressKeyPress=true;Close(); } };
+        KeyDown+=delegate(object sender,KeyEventArgs e) { HandleEditorKey(e); };
         Deactivate+=delegate { if(!closing&&dirty){timer.Stop();timer.Start();} };
         FormClosing+=delegate(object sender,FormClosingEventArgs e) { if(box.IsImeComposing){e.Cancel=true;return;}closing=true;timer.Stop();if(!Save()) { e.Cancel=true;closing=false; } };
         FormClosed+=delegate { timer.Dispose(); };
     }
-    public void SaveEditorPreview(string path){using(Bitmap image=new Bitmap(Width,Height)){DrawToBitmap(image,ClientRectangle);Point pos=PointToClient(box.PointToScreen(Point.Empty));using(Graphics g=Graphics.FromImage(image))using(SolidBrush ink=new SolidBrush(box.ForeColor))Typography.Draw(g,box.Text,box.Font,ink,new RectangleF(pos.X+1,pos.Y+1,box.Width-2,box.Height-2),null,true,1.2f);image.Save(path,System.Drawing.Imaging.ImageFormat.Png);}}
+    internal void HandleEditorKey(KeyEventArgs e){
+        if(box.IsImeComposing)return;
+        if(e.Modifiers==Keys.Control&&e.KeyCode==Keys.B){e.SuppressKeyPress=true;ToggleFormat(false);return;}
+        if(e.Modifiers==Keys.Control&&e.KeyCode==Keys.H){e.SuppressKeyPress=true;ToggleFormat(true);return;}
+        if(e.KeyCode==Keys.Enter&&e.Modifiers==Keys.Alt){e.SuppressKeyPress=true;box.SelectedText=Environment.NewLine;return;}
+        if(e.KeyCode==Keys.Enter&&e.Modifiers==Keys.None){e.SuppressKeyPress=true;Close();return;}
+        if(e.KeyCode==Keys.Escape){e.SuppressKeyPress=true;Close();}
+    }
+    public static void CheckShortcuts(string directory){
+        Directory.CreateDirectory(directory);string saved=null;int calls=0;
+        using(NoteEditor form=new NoteEditor("第一行尾",new Rectangle(0,0,344,520),delegate(string text){calls++;saved=text;return true;})){
+            form.Show();Application.DoEvents();form.box.Select(3,1);KeyEventArgs newline=new KeyEventArgs(Keys.Enter|Keys.Alt);form.OnKeyDown(newline);
+            if(form.IsDisposed||!newline.SuppressKeyPress||form.box.Text.Replace("\r\n","\n")!="第一行\n"||calls!=0)throw new Exception("Alt+Enter must replace selection with newline and keep editor open");
+            form.OnKeyDown(new KeyEventArgs(Keys.Enter));if(!form.IsDisposed||calls!=1||saved.Replace("\r\n","\n")!="第一行\n")throw new Exception("Enter must confirm and save without inserting a newline");
+        }
+        calls=0;using(NoteEditor form=new NoteEditor("原文",new Rectangle(0,0,344,520),delegate(string text){calls++;saved=text;return true;})){
+            form.Show();Application.DoEvents();SendImeMessage(form.box.Handle,0x10d,IntPtr.Zero,IntPtr.Zero);form.box.Text="pin yin";KeyEventArgs ime=new KeyEventArgs(Keys.Enter);form.OnKeyDown(ime);form.OnKeyDown(new KeyEventArgs(Keys.Enter|Keys.Alt));
+            if(form.IsDisposed||calls!=0||ime.SuppressKeyPress||form.box.Text!="pin yin")throw new Exception("Composition keys must remain with the IME");
+            form.box.Text="拼音完成";SendImeMessage(form.box.Handle,0x10e,IntPtr.Zero,IntPtr.Zero);Application.DoEvents();form.OnKeyDown(new KeyEventArgs(Keys.Enter));if(!form.IsDisposed||calls!=1||saved!="拼音完成")throw new Exception("Confirmed composition lost text");
+        }
+        bool allow=false;using(NoteEditor form=new NoteEditor("原文",new Rectangle(0,0,344,520),delegate(string text){return allow;})){
+            form.Show();Application.DoEvents();if(form.Height!=520||form.Width!=344||form.box.PointToScreen(Point.Empty).Y+form.box.Height>form.Bottom-14)throw new Exception("Editor must fit note bounds");form.box.Text="未丢失的修改";form.OnKeyDown(new KeyEventArgs(Keys.Enter));if(form.IsDisposed||!form.status.Visible||form.box.Text!="未丢失的修改")throw new Exception("Failed Enter confirmation must retain text");allow=true;form.OnKeyDown(new KeyEventArgs(Keys.Enter));if(!form.IsDisposed)throw new Exception("Enter retry did not finish");
+        }
+        File.WriteAllText(Path.Combine(directory,"shortcut-test-result.txt"),"PASS: Alt+Enter replaces selected text with a newline; Enter confirms and saves; composition receives Enter unchanged; failed save keeps editor and text; retry works. Real Pinyin candidate behavior still needs manual verification.",Encoding.UTF8);
+    }
+    public void SaveEditorPreview(string path){using(Bitmap image=new Bitmap(Width,Height)){DrawToBitmap(image,ClientRectangle);Point pos=PointToClient(box.PointToScreen(Point.Empty));using(NoteTextPreview content=new NoteTextPreview{Size=box.Size,Font=box.Font,ForeColor=box.ForeColor,BackColor=box.BackColor,Text=box.Text,Formats=NoteFormatting.Export(box)})using(Bitmap text=new Bitmap(box.Width,box.Height))using(Graphics g=Graphics.FromImage(image)){content.DrawToBitmap(text,content.ClientRectangle);g.DrawImageUnscaled(text,pos);}image.Save(path,System.Drawing.Imaging.ImageFormat.Png);}}
     public static void CheckEditor(string report){bool allow=false;string captured=null;using(NoteEditor form=new NoteEditor("原始记录",new Rectangle(0,0,344,520),delegate(string value){captured=value;return allow;})){form.Show();Application.DoEvents();form.box.Text="修改后的记录 / Test 123";form.Close();if(form.IsDisposed||captured!=form.box.Text)throw new Exception("Failed save did not retain editor");allow=true;form.Close();if(!form.IsDisposed||captured!="修改后的记录 / Test 123")throw new Exception("Final save failed");}File.WriteAllText(report,"PASS: failed save retains editor and text; successful close persists exact text.",Encoding.UTF8);}
     [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="SendMessageW")]static extern IntPtr SendImeMessage(IntPtr handle,int message,IntPtr w,IntPtr l);
     public static void CheckImeEditing(string report){int saves=0;string stored=null;using(NoteEditor form=new NoteEditor("原始记录",new Rectangle(0,0,344,520),delegate(string text){saves++;stored=text;return true;})){form.Show();Application.DoEvents();SendImeMessage(form.box.Handle,0x10d,IntPtr.Zero,IntPtr.Zero);form.box.Text="pin yin";if(!form.box.IsImeComposing||form.Save()||saves!=0)throw new Exception("IME composition was saved");using(Form other=new Form()){other.Show();other.Activate();Application.DoEvents();if(form.IsDisposed)throw new Exception("Focus loss closed editor");other.Close();}form.Close();if(form.IsDisposed)throw new Exception("Composition close lost input");form.box.Text="拼音输入完成 / Test 123";SendImeMessage(form.box.Handle,0x10e,IntPtr.Zero,IntPtr.Zero);Application.DoEvents();DateTime deadline=DateTime.Now.AddSeconds(3);while(saves==0&&DateTime.Now<deadline){Application.DoEvents();System.Threading.Thread.Sleep(20);}if(saves!=1||stored!="拼音输入完成 / Test 123"||form.status.Visible||form.IsDisposed)throw new Exception("Quiet autosave failed");form.Close();}File.WriteAllText(report,"PASS: IME start defers save and close; focus loss keeps editor; IME end triggers silent idle save; committed text preserved. Actual Pinyin candidate-window behavior still needs user testing.",Encoding.UTF8);}
+    public void ToggleFormat(bool highlight){if(box.IsImeComposing||box.SelectionLength==0)return;if(highlight){bool clearing=box.SelectionBackColor.ToArgb()==NoteFormatting.Yellow.ToArgb();box.SelectionBackColor=clearing?box.BackColor:NoteFormatting.Yellow;box.SelectionColor=clearing?BlueTheme.Ink:NoteFormatting.HighlightInk;}else NativeCharacter.SetBold(box,!NativeCharacter.IsBold(box));dirty=true;timer.Stop();timer.Start();box.Focus();}
+    internal MixedRichTextBox EditingBox {get{return box;}}
     bool Save() {
         if(box.IsImeComposing)return false;
         if(!dirty) return true;
-        if(persist(box.Text)) {dirty=false;status.Text="";status.Visible=false;return true;}
+        if(PersistRich!=null?PersistRich(box.Text,NoteFormatting.Export(box)):persist(box.Text)) {dirty=false;status.Text="";status.Visible=false;return true;}
         status.Text="保存失败，内容仍保留，请稍后重试。";status.Visible=true;return false;
     }
 }
@@ -131,16 +160,16 @@ public class SideTab : Button {
     public bool Selected;
     public SideTab() {Size=new Size(60,37);Margin=new Padding(0,0,0,7);FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;Cursor=Cursors.Hand;TabStop=false;}
     protected override void OnPaint(PaintEventArgs e) {
-        using(System.Drawing.Drawing2D.LinearGradientBrush background=new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0,-(Top+(Parent==null?0:Parent.Top)),Width,Parent==null||Parent.Parent==null?740:Parent.Parent.Height),Color.FromArgb(217,232,245),Color.FromArgb(196,215,233),90))e.Graphics.FillRectangle(background,ClientRectangle);
+        using(System.Drawing.Drawing2D.LinearGradientBrush background=new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0,-(Top+(Parent==null?0:Parent.Top)),Width,Parent==null||Parent.Parent==null?740:Parent.Parent.Height),BlueTheme.OuterTop,BlueTheme.OuterBottom,90))e.Graphics.FillRectangle(background,ClientRectangle);
         e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using(System.Drawing.Drawing2D.GraphicsPath shape=PaperShapes.Rounded(new RectangleF(.5f,.5f,Width-1,Height-1),7))using(SolidBrush fill=new SolidBrush(Selected?BlueTheme.Soft:BlueTheme.Surface))using(Pen border=new Pen(Selected?Color.FromArgb(182,207,234):BlueTheme.Border)){
+        using(System.Drawing.Drawing2D.GraphicsPath shape=PaperShapes.Rounded(new RectangleF(.5f,.5f,Width-1,Height-1),7))using(SolidBrush fill=new SolidBrush(Selected?BlueTheme.Soft:BlueTheme.Surface))using(Pen border=new Pen(Selected?BlueTheme.Border:BlueTheme.Border)){
             e.Graphics.FillPath(fill,shape);e.Graphics.DrawPath(border,shape);
         }
         if(Selected)using(Pen accent=new Pen(BlueTheme.Accent,3))e.Graphics.DrawLine(accent,2,8,2,Height-8);
         using(SolidBrush brush=new SolidBrush(Selected?BlueTheme.Accent:BlueTheme.Muted))using(StringFormat sf=new StringFormat{Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center})Typography.Draw(e.Graphics,Text,Font,brush,new RectangleF(Width<50?3:7,0,Width-(Width<50?6:13),Height-3),sf,false);
     }
 }
-public class PanelForm : Form {
+public class PanelForm : UtilityForm {
     readonly IWorkspaceRepository store; readonly NoteState state; readonly bool preview;
     readonly Label note,goal,caption,heading; readonly CalendarView calendar;
     readonly FlowLayoutPanel tabs; readonly Button addTab,foldButton,appearanceButton;
@@ -151,7 +180,7 @@ public class PanelForm : Form {
     public string SaveError="";
     protected override bool ShowWithoutActivation { get { return true; } }
     public PanelForm(IWorkspaceRepository data, NoteState initial, bool isPreview) {
-        store=data;state=initial;state.EnsureCategories();preview=isPreview;
+        store=data;state=initial;state.EnsureCategories();preview=isPreview;BlueTheme.Apply(state.Device.ThemeName);
         Text="进步签 · 技术样例";Icon=AppIcons.Main;FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;
         AutoScaleMode=AutoScaleMode.None;ClientSize=new Size(464,818);BackColor=BlueTheme.Paper;
         Font=new Font("Microsoft YaHei UI",13.333f,FontStyle.Regular,GraphicsUnit.Pixel);StartPosition=FormStartPosition.Manual;
@@ -159,10 +188,10 @@ public class PanelForm : Form {
         calendar=new CalendarView { Location=new Point(88,64),Size=new Size(344,146) };
         goal=new PaperCountdownLabel {Location=new Point(88,216),Size=new Size(344,63),BackColor=BlueTheme.Paper,Padding=new Padding(8,3,8,0),AutoEllipsis=true,ForeColor=BlueTheme.Ink};
         caption=new MixedLabel {Visible=false,Text="随手记",Location=new Point(20,348),Size=new Size(320,25),ForeColor=BlueTheme.Muted};
-        note=new PaperRecordLabel {Font=Typography.Chinese(17f,FontStyle.Regular),Text=state.ActiveCategory.Content,Location=new Point(88,279),Size=new Size(344,520),BackColor=BlueTheme.Surface,Padding=new Padding(12),Cursor=Cursors.IBeam,AutoEllipsis=true};
+        note=new PaperRecordLabel {ForeColor=BlueTheme.Ink,Font=Typography.Chinese(17f,FontStyle.Regular),Text=state.ActiveCategory.Content,Location=new Point(88,279),Size=new Size(344,520),BackColor=BlueTheme.Surface,Padding=new Padding(12),Cursor=Cursors.IBeam,AutoEllipsis=true};
         Label hint=new MixedLabel {Text="双击便签编辑 · 右键打开菜单",Location=new Point(20,620),Size=new Size(320,24),ForeColor=BlueTheme.Muted,Font=new Font("Microsoft YaHei UI",12f,FontStyle.Regular,GraphicsUnit.Pixel)};
         hint.Visible=false;Controls.AddRange(new Control[]{heading,calendar,goal,caption,note,hint});
-        tabs=new SideRailPanel {Location=new Point(15,279),Size=new Size(61,452),FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true,BackColor=BlueTheme.Outer};
+        tabs=new CategoryRail {Location=new Point(15,279),Size=new Size(61,452),FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true,BackColor=BlueTheme.Outer};
         addTab=new AddCategoryButton {Text="新增分类",Location=new Point(22,753),Size=new Size(34,34),FlatStyle=FlatStyle.Flat,ForeColor=BlueTheme.Ink};
         addTab.Click+=delegate {PromptCategory(null);};
         Controls.Add(tabs);Controls.Add(addTab);RenderTabs();
@@ -182,6 +211,7 @@ public class PanelForm : Form {
         menu.Items.Add("设置倒计时",null,delegate { EditGoal(); });
         menu.Items.Add("新增分类",null,delegate {PromptCategory(null);});
         menu.Items.Add("重命名当前分类",null,delegate {PromptCategory(state.ActiveCategory);});
+        menu.Items.Add("删除当前分类",null,delegate{ConfirmDeleteCategory(state.ActiveId);});
         ToolStripMenuItem move=new ToolStripMenuItem("解锁位置（拖动标题）");
         refreshPositionMenu=delegate{move.Text=unlocked?"锁定位置":"解锁位置（拖动标题）";heading.Text="无限进步才能掌握主动";};
         move.Click+=delegate {SetPositionUnlocked(!unlocked);};
@@ -190,6 +220,9 @@ public class PanelForm : Form {
         menu.Items.Add("打开数据文件夹",null,delegate { Directory.CreateDirectory(store.Folder);System.Diagnostics.Process.Start("explorer.exe",store.Folder); });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出",null,delegate { Close(); });
+        ToolStripMenuItem copySelection=new ToolStripMenuItem("复制所选文字");copySelection.Click+=delegate{((PaperRecordLabel)note).CopySelection();};
+        menu.Items.Insert(0,copySelection);menu.Items.Insert(1,new ToolStripMenuItem("全选正文",null,delegate{((PaperRecordLabel)note).SelectAllText();}));menu.Items.Insert(2,new ToolStripSeparator());
+        menu.Opening+=delegate{copySelection.Enabled=((PaperRecordLabel)note).HasTextSelection;};
         ContextMenuStrip=menu;
         foreach(Control c in Controls)c.ContextMenuStrip=menu;
         tray=new NotifyIcon {Icon=AppIcons.Tray,Text="进步签 · 双击编辑便签",ContextMenuStrip=menu,Visible=!preview};
@@ -203,9 +236,9 @@ public class PanelForm : Form {
     }
     protected override void OnPaintBackground(PaintEventArgs e){
         e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using(System.Drawing.Drawing2D.LinearGradientBrush outer=new System.Drawing.Drawing2D.LinearGradientBrush(ClientRectangle,Color.FromArgb(217,232,245),Color.FromArgb(196,215,233),90))e.Graphics.FillRectangle(outer,ClientRectangle);
+        using(System.Drawing.Drawing2D.LinearGradientBrush outer=new System.Drawing.Drawing2D.LinearGradientBrush(ClientRectangle,BlueTheme.OuterTop,BlueTheme.OuterBottom,90))e.Graphics.FillRectangle(outer,ClientRectangle);
         float y=state.Collapsed?12:19,h=state.Collapsed?38:780;
-        using(System.Drawing.Drawing2D.GraphicsPath body=PaperShapes.Rounded(new RectangleF(76.5f,y+.5f,367,h-1),24))using(SolidBrush b=new SolidBrush(BlueTheme.Paper))using(Pen p=new Pen(Color.White)){e.Graphics.FillPath(b,body);e.Graphics.DrawPath(p,body);}
+        using(System.Drawing.Drawing2D.GraphicsPath body=PaperShapes.Rounded(new RectangleF(76.5f,y+.5f,367,h-1),24))using(SolidBrush b=new SolidBrush(BlueTheme.Paper))using(Pen p=new Pen(BlueTheme.Border)){e.Graphics.FillPath(b,body);e.Graphics.DrawPath(p,body);}
     }
     protected override void OnPaint(PaintEventArgs e){
         base.OnPaint(e);
@@ -217,11 +250,13 @@ public class PanelForm : Form {
         if(!Persist()){state.Device.BackgroundTransparencyPercent=previous;paperLayer.SetTransparency(previous);return false;}
         paperLayer.SetTransparency(value);return true;
     }
+    public bool SetTheme(string id){if(!Themes.Contains(id))throw new ArgumentException("未知主题。");string previous=state.Device.ThemeName;state.Device.ThemeName=id;if(!Persist()){state.Device.ThemeName=previous;return false;}BlueTheme.Apply(id);return true;}
+    public void RefreshThemeView(){if(paperLayer!=null)paperLayer.Invalidate();Invalidate(true);}
     void SetPositionUnlocked(bool value){unlocked=value;if(refreshPositionMenu!=null)refreshPositionMenu();}
     void ShowTransparencySettings(){ShowPersonalCenter();}
     void ShowPersonalCenter(){
         if(!FinishEditor())return;
-        using(PersonalCenter f=new PersonalCenter(state.Device.BackgroundTransparencyPercent,delegate{return unlocked;},delegate(bool value){SetPositionUnlocked(value);},delegate(int value){if(!SetBackgroundTransparency(value))throw new Exception(SaveError);return true;},delegate(int value){paperLayer.SetTransparency(value);},delegate{int x=state.X,y=state.Y;DefaultPosition();Clamp();Place();if(!Persist()){state.X=x;state.Y=y;Place();throw new Exception(SaveError);}},delegate{Directory.CreateDirectory(store.Folder);System.Diagnostics.Process.Start("explorer.exe",store.Folder);}))f.ShowDialog();
+        using(PersonalCenter f=new PersonalCenter(state.Device.BackgroundTransparencyPercent,delegate{return unlocked;},delegate(bool value){SetPositionUnlocked(value);},delegate(int value){if(!SetBackgroundTransparency(value))throw new Exception(SaveError);return true;},delegate(int value){paperLayer.SetTransparency(value);},delegate{int x=state.X,y=state.Y;DefaultPosition();Clamp();Place();if(!Persist()){state.X=x;state.Y=y;Place();throw new Exception(SaveError);}},delegate{Directory.CreateDirectory(store.Folder);System.Diagnostics.Process.Start("explorer.exe",store.Folder);},null,delegate{return state.Device.ThemeName;},delegate(string id){if(!SetTheme(id))throw new Exception(SaveError);return true;}))f.ShowDialog();
     }
     public bool SetCollapsed(bool collapsed) {
         if(collapsed==state.Collapsed)return true;
@@ -271,12 +306,13 @@ public class PanelForm : Form {
         if(state.Collapsed&&!SetCollapsed(false))return;
         if(editor!=null&&!editor.IsDisposed) {editor.Activate();return;}
         Rectangle area=note.RectangleToScreen(note.ClientRectangle);
-        // Keep the actual editor textbox as tall as the 2/3 display area.
+        // Keep the complete editor within the existing note card.
         Rectangle work=Screen.FromRectangle(area).WorkingArea;
-        area.Y=Math.Max(work.Top,Math.Min(area.Y,work.Bottom-area.Height-90));
+        area.Y=Math.Max(work.Top,Math.Min(area.Y,work.Bottom-area.Height));
         NoteCategory editing=state.ActiveCategory;
-        editor=new NoteEditor(editing.Content,area,delegate(string value) {editing.Content=value;if(state.ActiveId==editing.Id)note.Text=value;bool ok=Persist();if(ok)caption.Text=editing.Name+" · 已保存";return ok;});
+        editor=new NoteEditor(editing.Content,area,delegate{return true;},editing.Note.Formats);
         editor.Text="编辑 · "+editing.Name+" · Esc 完成";
+        editor.PersistRich=delegate(string text,System.Collections.Generic.List<NoteFormat> formats){editing.Content=text;editing.Note.Formats=formats;if(state.ActiveId==editing.Id){note.Text=text;((PaperRecordLabel)note).Formats=formats;}return Persist();};
         editor.Show();editor.Activate();
     }
     bool FinishEditor() {
@@ -305,21 +341,47 @@ public class PanelForm : Form {
         name=ValidateCategoryName(name,id);string old=c.Name;c.Name=name;
         if(!Persist()){c.Name=old;return false;}RenderTabs();return true;
     }
+    void ConfirmDeleteCategory(string id){
+        if(!FinishEditor())return;
+        NoteCategory target=state.Categories.Find(delegate(NoteCategory c){return c.Id==id;});if(target==null)return;
+        if(state.Categories.Count<=1){MessageBox.Show("至少保留一个分类。","进步签",MessageBoxButtons.OK,MessageBoxIcon.Information);return;}
+        if(MessageBox.Show("删除分类“"+target.Name+"”及其中全部内容？删除前会在数据文件夹的 backups 中保留完整副本。","删除分类",MessageBoxButtons.YesNo,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
+        try{DeleteCategory(id);}catch(Exception ex){MessageBox.Show("删除失败，分类已保留："+ex.Message,"进步签");}
+    }
+    public bool DeleteCategory(string id){if(!FinishEditor())return false;bool deleted=CategoryDeletion.Delete(state,id,store);if(deleted){note.Text=state.ActiveCategory.Content;RenderTabs();}return deleted;}
     string ValidateCategoryName(string name,string exceptId) {
         name=(name??"").Trim();if(name.Length==0||name.Length>12)throw new ArgumentException("分类名称请填写 1–12 个字符。");
         foreach(NoteCategory c in state.Categories)if(c.Id!=exceptId&&String.Equals(c.Name,name,StringComparison.OrdinalIgnoreCase))throw new ArgumentException("已有同名分类，请换一个名称。");
         return name;
     }
+    public bool MoveCategory(string id,int index){
+        if(!FinishEditor())return false;
+        try{bool changed=CategoryOrdering.Move(state,id,index,store);if(changed)RenderTabs();return changed;}catch(Exception ex){SaveError=ex.Message;MessageBox.Show("排序未保存，原顺序已保留："+ex.Message,"进步签");return false;}
+    }
+    int CategoryDropSlot(Point point){int slot=0;foreach(Control button in tabs.Controls)if(point.Y>=button.PointToScreen(new Point(0,button.Height/2)).Y)slot++;return slot;}
+    void UpdateCategoryDrop(Point point){
+        Rectangle rail=tabs.RectangleToScreen(tabs.ClientRectangle);if(point.X<rail.Left-24||point.X>rail.Right+24){((CategoryRail)tabs).DropY=-1;tabs.Invalidate();return;}
+        int scroll=-tabs.AutoScrollPosition.Y;if(point.Y<rail.Top+20)tabs.AutoScrollPosition=new Point(0,Math.Max(0,scroll-12));else if(point.Y>rail.Bottom-20)tabs.AutoScrollPosition=new Point(0,scroll+12);
+        int slot=CategoryDropSlot(point);int y=slot<tabs.Controls.Count?tabs.Controls[slot].Top-4:tabs.Controls[tabs.Controls.Count-1].Bottom+3;((CategoryRail)tabs).DropY=y;tabs.Invalidate();
+    }
+    void DropCategory(string id,Point point){
+        ((CategoryRail)tabs).DropY=-1;tabs.Invalidate();Rectangle rail=tabs.RectangleToScreen(tabs.ClientRectangle);if(point.X<rail.Left-24||point.X>rail.Right+24)return;
+        int original=state.Categories.FindIndex(delegate(NoteCategory c){return c.Id==id;});int slot=CategoryDropSlot(point);if(slot>original)slot--;MoveCategory(id,slot);
+    }
     void RenderTabs() {
-        ((PaperRecordLabel)note).CategoryName=state.ActiveCategory.Name;
+        ((PaperRecordLabel)note).CategoryName=state.ActiveCategory.Name;((PaperRecordLabel)note).Formats=state.ActiveCategory.Note.Formats;
         tabs.SuspendLayout();
         while(tabs.Controls.Count>0){Control old=tabs.Controls[0];tabs.Controls.Remove(old);old.Dispose();}
         foreach(NoteCategory category in state.Categories) {
             NoteCategory captured=category;
-            SideTab button=new SideTab {Text=category.Name,Selected=category.Id==state.ActiveId,Font=new Font("Microsoft YaHei UI",12f,FontStyle.Regular,GraphicsUnit.Pixel)};
+            SortableSideTab button=new SortableSideTab {Text=category.Name,Selected=category.Id==state.ActiveId,Font=new Font("Microsoft YaHei UI",12f,FontStyle.Regular,GraphicsUnit.Pixel)};
             button.Click+=delegate {SelectCategory(captured.Id);};
+            button.DragMoved=delegate(Point point){UpdateCategoryDrop(point);};button.DragCancelled=delegate{((CategoryRail)tabs).DropY=-1;tabs.Invalidate();};button.Dropped=delegate(Point point){DropCategory(captured.Id,point);};
             ContextMenuStrip actions=new ContextMenuStrip{Renderer=new MixedMenuRenderer(),Font=Typography.Chinese(13.333f,FontStyle.Regular)};
             actions.Items.Add("重命名“"+category.Name+"”",null,delegate {PromptCategory(captured);});
+            ToolStripMenuItem up=new ToolStripMenuItem("上移",null,delegate{MoveCategory(captured.Id,state.Categories.IndexOf(captured)-1);});up.Enabled=state.Categories.IndexOf(captured)>0;actions.Items.Add(up);
+            ToolStripMenuItem down=new ToolStripMenuItem("下移",null,delegate{MoveCategory(captured.Id,state.Categories.IndexOf(captured)+1);});down.Enabled=state.Categories.IndexOf(captured)<state.Categories.Count-1;actions.Items.Add(down);
+            actions.Items.Add("删除分类",null,delegate{ConfirmDeleteCategory(captured.Id);});
             button.ContextMenuStrip=actions;button.Disposed+=delegate {actions.Dispose();};tabs.Controls.Add(button);
         }
         tabs.ResumeLayout();
@@ -353,6 +415,12 @@ public static class Program {
             if(args.Length>=2&&args[0]=="--ime-test"){NoteEditor.CheckImeEditing(args[1]);return;}
             if(args.Length>=2&&args[0]=="--shared-data-test"){SharedDataTests.Run(args[1]);return;}
             if(args.Length>=2&&args[0]=="--autostart-test"){AutoStartTests.Run(args[1]);return;}
+            if(args.Length>=2&&args[0]=="--shortcut-test"){NoteEditor.CheckShortcuts(args[1]);return;}
+            if(args.Length>=2&&args[0]=="--selection-test"){SelectableNoteTests.Run(args[1]);return;}
+            if(args.Length>=2&&args[0]=="--spacing-test"){MixedRichTextBox.CheckParagraphSpacing(args[1]);return;}
+            if(args.Length>=2&&args[0]=="--sort-test"){CategoryOrderingTests.Run(args[1]);return;}
+            if(args.Length>=2&&args[0]=="--features-test"){NoteFeatureTests.Run(args[1]);return;}
+            if(args.Length>=2&&args[0]=="--theme-test"){ThemeTests.Run(args[1]);return;}
             string root=AppDomain.CurrentDomain.BaseDirectory;
             bool preview=args.Length>=2&&args[0]=="--preview";
             bool smoke=args.Length>=2&&args[0]=="--smoke";

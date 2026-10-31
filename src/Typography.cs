@@ -1,5 +1,6 @@
 ﻿using System;using System.Drawing;using System.Drawing.Drawing2D;using System.Globalization;using System.Runtime.InteropServices;using System.Windows.Forms;
 public static class Typography {
+    public const float NoteLineSpacing=1f;
     public static bool ChineseCharacter(char c){return c>='\u2e80'&&c<='\u9fff'||c>='\uf900'&&c<='\ufaff'||c>='\uff00'&&c<='\uffef';}
     public static Font Chinese(float pixels,FontStyle style){return new Font("Microsoft YaHei UI",pixels,style,GraphicsUnit.Pixel);}
     public static Font Latin(float pixels,FontStyle style){return new Font("Times New Roman",pixels,style,GraphicsUnit.Pixel);}
@@ -33,6 +34,7 @@ public class MixedRichTextBox:RichTextBox {
     bool formatting,composing;IntPtr document;
     public bool IsImeComposing {get{return composing;}}
     public event EventHandler CompositionEnded;
+    public bool CompactParagraphs {get;set;}
     public MixedRichTextBox(){Font=Typography.Latin(14.667f,FontStyle.Regular);DetectUrls=false;EnableAutoDragDrop=false;}
     protected override void OnHandleCreated(EventArgs e){base.OnHandleCreated(e);IntPtr ole;SendMessage(Handle,0x043c,IntPtr.Zero,out ole);if(ole!=IntPtr.Zero){Guid id=new Guid("8cc497c0-a1df-11ce-8098-00aa0047be5d");Marshal.QueryInterface(ole,ref id,out document);Marshal.Release(ole);}ApplyFonts();}
     protected override void OnHandleDestroyed(EventArgs e){if(document!=IntPtr.Zero){Marshal.Release(document);document=IntPtr.Zero;}base.OnHandleDestroyed(e);}
@@ -41,8 +43,17 @@ public class MixedRichTextBox:RichTextBox {
     void UndoRecording(bool resume){if(document==IntPtr.Zero)return;IntPtr table=Marshal.ReadIntPtr(document);UndoDelegate undo=(UndoDelegate)Marshal.GetDelegateForFunctionPointer(Marshal.ReadIntPtr(table,22*IntPtr.Size),typeof(UndoDelegate));int count;undo(document,resume?-9999994:-9999995,out count);}
     public void ApplyFonts(){if(formatting||composing||!IsHandleCreated)return;formatting=true;int start=SelectionStart,length=SelectionLength;bool modified=Modified;POINT scroll=new POINT();SendPoint(Handle,0x04dd,IntPtr.Zero,ref scroll);SendSimple(Handle,11,IntPtr.Zero,IntPtr.Zero);
         try{UndoRecording(false);float px=Font.Unit==GraphicsUnit.Pixel?Font.Size:Font.SizeInPoints*96/72;using(Font cn=Typography.Chinese(px,Font.Style))using(Font en=Typography.Latin(px,Font.Style)){
-            SelectAll();SelectionFont=en;string text=Text;for(int i=0;i<text.Length;){if(!Typography.ChineseCharacter(text[i])){i++;continue;}int first=i;while(i<text.Length&&Typography.ChineseCharacter(text[i]))i++;Select(first,i-first);SelectionFont=cn;}Select(Math.Min(start,TextLength),Math.Min(length,Math.Max(0,TextLength-start)));if(length==0)SelectionFont=start>0&&start<=text.Length&&Typography.ChineseCharacter(text[start-1])?cn:en;
+            SelectAll();NativeCharacter.Face(this,en);if(CompactParagraphs){PARAFORMAT2 p=ParagraphFormat(0,0,0);SendParagraph(Handle,0x0447,IntPtr.Zero,ref p);}string text=Text;for(int i=0;i<text.Length;){if(!Typography.ChineseCharacter(text[i])){i++;continue;}int first=i;while(i<text.Length&&Typography.ChineseCharacter(text[i]))i++;Select(first,i-first);NativeCharacter.Face(this,cn);}Select(Math.Min(start,TextLength),Math.Min(length,Math.Max(0,TextLength-start)));if(length==0)NativeCharacter.Face(this,start>0&&start<=text.Length&&Typography.ChineseCharacter(text[start-1])?cn:en);
         }}finally{UndoRecording(true);Modified=modified;SendPoint(Handle,0x04de,IntPtr.Zero,ref scroll);SendSimple(Handle,11,new IntPtr(1),IntPtr.Zero);formatting=false;Invalidate();}}
+    [StructLayout(LayoutKind.Sequential)]struct PARAFORMAT2 {
+        public uint cbSize,dwMask;public ushort wNumbering,wEffects;public int dxStartIndent,dxRightIndent,dxOffset;public ushort wAlignment,cTabCount;
+        [MarshalAs(UnmanagedType.ByValArray,SizeConst=32)]public int[] rgxTabs;
+        public int dySpaceBefore,dySpaceAfter,dyLineSpacing;public short sStyle;public byte bLineSpacingRule,bOutlineLevel;
+        public ushort wShadingWeight,wShadingStyle,wNumberingStart,wNumberingStyle,wNumberingTab,wBorderSpace,wBorderWidth,wBorders;
+    }
+    static PARAFORMAT2 ParagraphFormat(int before,int after,byte rule){return new PARAFORMAT2{cbSize=(uint)Marshal.SizeOf(typeof(PARAFORMAT2)),dwMask=0x000001c0,rgxTabs=new int[32],dySpaceBefore=before,dySpaceAfter=after,dyLineSpacing=0,bLineSpacingRule=rule};}
+    [DllImport("user32.dll",EntryPoint="SendMessageW")]static extern IntPtr SendParagraph(IntPtr h,int msg,IntPtr w,ref PARAFORMAT2 value);
+    public static void CheckParagraphSpacing(string directory){System.IO.Directory.CreateDirectory(directory);using(Form form=new Form())using(MixedRichTextBox box=new MixedRichTextBox{CompactParagraphs=true,Dock=DockStyle.Fill,Text="第一段 ABC\n第二段\n第三段"}){form.Controls.Add(box);form.Show();Application.DoEvents();string original=box.Text;box.CompactParagraphs=false;box.SelectAll();PARAFORMAT2 wide=ParagraphFormat(120,240,2);SendParagraph(box.Handle,0x0447,IntPtr.Zero,ref wide);PARAFORMAT2 read=ParagraphFormat(0,0,0);SendParagraph(box.Handle,0x043d,IntPtr.Zero,ref read);if(read.bLineSpacingRule!=2||read.dySpaceBefore!=120||read.dySpaceAfter!=240)throw new Exception("Spacing test setup failed: rule="+read.bLineSpacingRule+" before="+read.dySpaceBefore+" after="+read.dySpaceAfter+" size="+read.cbSize);box.CompactParagraphs=true;box.Select(2,1);box.ApplyFonts();if(box.SelectionStart!=2||box.SelectionLength!=1||box.Text!=original)throw new Exception("Paragraph formatting altered selection or text");box.SelectAll();read=ParagraphFormat(0,0,0);SendParagraph(box.Handle,0x043d,IntPtr.Zero,ref read);if((read.dwMask&0x1c0)!=0x1c0||read.bLineSpacingRule!=0||read.dySpaceBefore!=0||read.dySpaceAfter!=0)throw new Exception("Single spacing and zero paragraph margins were not applied");form.Close();}System.IO.File.WriteAllText(System.IO.Path.Combine(directory,"spacing-test-result.txt"),"PASS: native RichEdit double spacing and paragraph margins reset to single spacing, zero before/after; note text and selection preserved.");}
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]delegate int UndoDelegate(IntPtr self,int value,out int count);
     [StructLayout(LayoutKind.Sequential)]struct POINT{public int X,Y;}
     [DllImport("user32.dll",EntryPoint="SendMessageW")]static extern IntPtr SendMessage(IntPtr h,int msg,IntPtr w,out IntPtr value);
